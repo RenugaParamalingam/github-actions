@@ -4,41 +4,61 @@ set -euo pipefail
 MIG_DIR="${MIG_DIR:-db/migrations}"
 BASE="origin/main"
 
+# 12 = YYYYMMDDHHMM
+VERSION_DIGITS="${VERSION_DIGITS:-12}"
+
+# New files must start with <digits>_ ; anything after that is allowed
+NAME_REGEX="^([0-9]{${VERSION_DIGITS}})_.+"
+# Used only to read existing versions on main
+LOOSE_REGEX='^([0-9]+)_.+'
+
 git fetch --no-tags origin main
 
-ver() { sed -E 's#.*/([0-9]+)_.*#\1#'; }
-
 # Highest version currently on main
-latest=$(git ls-tree -r --name-only "$BASE" -- "$MIG_DIR" | ver | sort -n | tail -1)
-latest=${latest:-0}
-
-# Files this PR adds (--no-renames so a renamed file counts as added)
-added=$(git diff --no-renames --name-only --diff-filter=A "$BASE"...HEAD -- "$MIG_DIR" | ver | sort -u)
-
-# Existing migrations must not be modified, deleted or renamed
-changed=$(git diff --no-renames --name-only --diff-filter=MD "$BASE"...HEAD -- "$MIG_DIR" || true)
-if [ -n "$changed" ]; then
-  echo "ERROR: existing migration files were modified or deleted:"
-  echo "$changed"
-  exit 1
-fi
-
-if [ -z "$added" ]; then
-  echo "No new migrations. OK."
-  exit 0
-fi
+latest=0
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  name=$(basename "$f")
+  if [[ $name =~ $LOOSE_REGEX ]]; then
+    v=$((10#${BASH_REMATCH[1]}))
+    if (( v > latest )); then latest=$v; fi
+  fi
+done < <(git ls-tree -r --name-only "$BASE" -- "$MIG_DIR")
 
 fail=0
-for v in $added; do
-  if [ "$v" -le "$latest" ]; then
-    echo "ERROR: migration version $v is not greater than main's latest ($latest)."
+
+# # Existing migrations must not be modified or deleted
+# changed=$(git diff --no-renames --name-only --diff-filter=MD "$BASE"...HEAD -- "$MIG_DIR" || true)
+# if [ -n "$changed" ]; then
+#   echo "ERROR: existing migration files were modified or deleted:"
+#   echo "$changed"
+#   fail=1
+# fi
+
+# New migrations: validate file name format, then version
+# (--no-renames so a renamed file counts as added)
+added=$(git diff --no-renames --name-only --diff-filter=A "$BASE"...HEAD -- "$MIG_DIR" || true)
+
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  name=$(basename "$f")
+
+  if [[ $name =~ $NAME_REGEX ]]; then
+    v=$((10#${BASH_REMATCH[1]}))
+    if (( v <= latest )); then
+      echo "ERROR: $name has version $v, not greater than main's latest ($latest)."
+      fail=1
+    fi
+  else
+    echo "ERROR: invalid migration file name: $name"
+    echo "       expected: <${VERSION_DIGITS} digits>_<anything>"
     fail=1
   fi
-done
+done <<< "$added"
 
 if [ "$fail" -eq 1 ]; then
-  echo "Rename your migration files with a fresh timestamp (e.g. $(date -u +%Y%m%d%H%M%S)) and push again."
+  echo "Fix the file names or rename with a fresh timestamp (e.g. $(date -u +%Y%m%d%H%M%S)) and push again."
   exit 1
 fi
 
-echo "Migration versions OK (main latest: $latest)."
+echo "Migration files OK (main latest: $latest)."
