@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MIG_DIR="${MIG_DIR:-migrations}"
+MIG_DIR="${MIG_DIR:-db/migrations}"
 BASE="origin/main"
 
 git fetch --no-tags origin main
