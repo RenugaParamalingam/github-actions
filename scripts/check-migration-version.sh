@@ -4,8 +4,8 @@ set -euo pipefail
 MIG_DIR="${MIG_DIR:-db/migrations}"
 BASE="origin/main"
 
-# 12 = YYYYMMDDHHMM
-VERSION_DIGITS="${VERSION_DIGITS:-12}"
+# 14 = YYYYMMDDHHMMSS
+VERSION_DIGITS="${VERSION_DIGITS:-14}"
 
 # New files must start with <digits>_ ; anything after that is allowed
 NAME_REGEX="^([0-9]{${VERSION_DIGITS}})_.+"
